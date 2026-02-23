@@ -1,121 +1,317 @@
 import 'package:flutter/material.dart';
 
+import 'models/compound.dart';
+import 'models/result_value.dart';
+import 'services/mks_api_service.dart';
+import 'widgets/compound_autocomplete.dart';
+import 'widgets/property_selector.dart';
+import 'widgets/results_table.dart';
+
 void main() {
-  runApp(const MyApp());
+  runApp(const ThermoApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ThermoApp extends StatelessWidget {
+  const ThermoApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Thermo Data Explorer',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const ThermoDataExplorer(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class ThermoDataExplorer extends StatefulWidget {
+  const ThermoDataExplorer({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<ThermoDataExplorer> createState() => _ThermoDataExplorerState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
+  final MksApiService _api = MksApiService();
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  // --- compound selection ---
+  Compound? _compound1;
+  Compound? _compound2;
+
+  // --- property selection ---
+  List<String> _availableProperties = [];
+  List<String> _selectedProperties = [];
+  bool _loadingProperties = false;
+  String? _propertiesError;
+
+  // --- conditions ---
+  final TextEditingController _tempController = TextEditingController(
+    text: '293.15',
+  );
+  final TextEditingController _pressureController = TextEditingController(
+    text: '101.325',
+  );
+  String? _tempError;
+  String? _pressureError;
+
+  // --- results ---
+  List<ResultValue> _results = [];
+  bool _calculating = false;
+  bool _hasQueried = false;
+  String? _resultsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProperties();
   }
 
   @override
+  void dispose() {
+    _tempController.dispose();
+    _pressureController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProperties() async {
+    setState(() {
+      _loadingProperties = true;
+      _propertiesError = null;
+    });
+    try {
+      final props = await _api.getProperties();
+      if (mounted) {
+        setState(() {
+          _availableProperties = props;
+          _loadingProperties = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _propertiesError = e.toString();
+          _loadingProperties = false;
+        });
+      }
+    }
+  }
+
+  // --- validation ---
+
+  String? _validateDouble(String value, String fieldName) {
+    if (value.trim().isEmpty) return '$fieldName is required.';
+    final parsed = double.tryParse(value.trim());
+    if (parsed == null) return '$fieldName must be a number.';
+    if (parsed <= 0) return '$fieldName must be positive.';
+    return null;
+  }
+
+  bool get _isFormValid {
+    if (_compound1 == null) return false;
+    if (_selectedProperties.isEmpty) return false;
+    if (_validateDouble(_tempController.text, 'Temperature') != null) {
+      return false;
+    }
+    if (_validateDouble(_pressureController.text, 'Pressure') != null) {
+      return false;
+    }
+    return true;
+  }
+
+  void _onTempChanged(String _) {
+    setState(() {
+      _tempError = _validateDouble(_tempController.text, 'Temperature');
+    });
+  }
+
+  void _onPressureChanged(String _) {
+    setState(() {
+      _pressureError = _validateDouble(
+        _pressureController.text,
+        'Pressure',
+      );
+    });
+  }
+
+  // --- calculate ---
+
+  Future<void> _calculate() async {
+    final tempErr = _validateDouble(_tempController.text, 'Temperature');
+    final pressErr = _validateDouble(_pressureController.text, 'Pressure');
+    setState(() {
+      _tempError = tempErr;
+      _pressureError = pressErr;
+    });
+    if (tempErr != null || pressErr != null) return;
+
+    final compounds = [_compound1!, if (_compound2 != null) _compound2!];
+    final temperature = double.parse(_tempController.text.trim());
+    final pressure = double.parse(_pressureController.text.trim());
+
+    setState(() {
+      _calculating = true;
+      _hasQueried = true;
+      _resultsError = null;
+      _results = [];
+    });
+
+    try {
+      final values = await _api.getValues(
+        compounds: compounds,
+        properties: _selectedProperties,
+        temperature: temperature,
+        pressure: pressure,
+      );
+      if (mounted) {
+        setState(() {
+          _results = values;
+          _calculating = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _resultsError = e.toString();
+          _calculating = false;
+        });
+      }
+    }
+  }
+
+  // --- build ---
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Thermo Data Explorer'),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ---- Compounds ----
+                Text(
+                  'Compounds',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                CompoundAutocomplete(
+                  key: const ValueKey('compound1'),
+                  label: 'Compound 1 (required)',
+                  service: _api,
+                  onSelected: (c) => setState(() => _compound1 = c),
+                ),
+                const SizedBox(height: 12),
+                CompoundAutocomplete(
+                  key: const ValueKey('compound2'),
+                  label: 'Compound 2 (optional)',
+                  service: _api,
+                  onSelected: (c) => setState(() => _compound2 = c),
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Properties ----
+                Text(
+                  'Properties',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                PropertySelector(
+                  availableProperties: _availableProperties,
+                  selectedProperties: _selectedProperties,
+                  isLoading: _loadingProperties,
+                  errorMessage: _propertiesError,
+                  onChanged: (updated) {
+                    setState(() => _selectedProperties = updated);
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Conditions ----
+                Text(
+                  'Operating Conditions',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _tempController,
+                        decoration: InputDecoration(
+                          labelText: 'Temperature (K)',
+                          border: const OutlineInputBorder(),
+                          errorText: _tempError,
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: _onTempChanged,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _pressureController,
+                        decoration: InputDecoration(
+                          labelText: 'Pressure (kPa)',
+                          border: const OutlineInputBorder(),
+                          errorText: _pressureError,
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: _onPressureChanged,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Calculate Button ----
+                ElevatedButton.icon(
+                  onPressed:
+                      (_isFormValid && !_calculating) ? _calculate : null,
+                  icon:
+                      _calculating
+                          ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.calculate),
+                  label: const Text('Calculate'),
+                ),
+                const SizedBox(height: 24),
+
+                // ---- Results ----
+                if (_hasQueried) ...[
+                  const Divider(),
+                  Text(
+                    'Results',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  ResultsTable(
+                    results: _results,
+                    isLoading: _calculating,
+                    errorMessage: _resultsError,
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
