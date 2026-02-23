@@ -58,13 +58,16 @@ https://mkswebapi.com/process?request=<url-encoded-json>
 ```json
 {
   "Type": "Get Values",
-  "Arguments": {
-    "EntityType": "Chemical",
-    "Identifier": "Water",
-    "Properties": ["Density"],
-    "Temperature": {"Value": "293.15", "Units": "K"},
-    "Pressure":    {"Value": "101.325", "Units": "kPa"}
-  }
+  "Arguments": {},
+  "Entities": [
+    {
+      "Name": "Water",
+      "EntityType": "Chemical",
+      "Properties": [{"Name": "Density"}],
+      "Temperature": {"Value": "293.15", "Units": "K"},
+      "Pressure":    {"Value": "101.325", "Units": "kPa"}
+    }
+  ]
 }
 ```
 
