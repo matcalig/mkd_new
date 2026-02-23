@@ -120,19 +120,23 @@ class MksApiService {
     for (final compound in compounds) {
       final response = await _request({
         'Type': 'Get Values',
-        'Arguments': {
-          'EntityType': compound.entityType,
-          'Identifier': compound.identifier,
-          'Properties': properties,
-          'Temperature': {
-            'Value': temperature.toString(),
-            'Units': 'K',
+        'Arguments': {},
+        'Entities': [
+          {
+            'Name': compound.identifier,
+            'EntityType': compound.entityType,
+            'Properties':
+                properties.map((p) => {'Name': p}).toList(),
+            'Temperature': {
+              'Value': temperature.toString(),
+              'Units': 'K',
+            },
+            'Pressure': {
+              'Value': pressure.toString(),
+              'Units': 'kPa',
+            },
           },
-          'Pressure': {
-            'Value': pressure.toString(),
-            'Units': 'kPa',
-          },
-        },
+        ],
       });
 
       final entities =
@@ -141,14 +145,15 @@ class MksApiService {
 
       for (final entity in entities) {
         final entityId =
-            entity['Identifier'] as String? ?? compound.identifier;
+            entity['Identifier'] as String? ??
+            entity['Name'] as String? ??
+            compound.identifier;
         final entityProps =
             (entity['Properties'] as List<dynamic>? ?? const [])
                 .whereType<Map<String, dynamic>>();
 
         for (final prop in entityProps) {
           final propName = prop['Name'] as String? ?? '';
-          final status = prop['Status'] as String? ?? '';
           final data =
               (prop['Data'] as List<dynamic>? ?? const [])
                   .whereType<Map<String, dynamic>>();
@@ -158,7 +163,7 @@ class MksApiService {
               ResultValue(
                 compound: entityId,
                 property: propName,
-                status: status,
+                status: prop['Status'] as String? ?? '',
                 value: 'N/A',
                 units: '',
               ),
@@ -169,10 +174,14 @@ class MksApiService {
                 ResultValue(
                   compound: entityId,
                   property: propName,
-                  status: status,
+                  status: point['Status'] as String? ?? '',
                   value: point['Value'] as String? ?? '',
-                  units: point['ValueUnits'] as String? ?? '',
-                  reference: point['Reference'] as String? ?? '',
+                  units: point['Units'] as String? ??
+                      point['ValueUnits'] as String? ??
+                      '',
+                  reference: point['Source'] as String? ??
+                      point['Reference'] as String? ??
+                      '',
                 ),
               );
             }

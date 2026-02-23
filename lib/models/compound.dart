@@ -3,7 +3,9 @@ class Compound {
 
   factory Compound.fromJson(Map<String, dynamic> json) {
     return Compound(
-      identifier: json['Identifier'] as String? ?? '',
+      identifier: json['Identifier'] as String? ??
+          json['Name'] as String? ??
+          '',
       entityType: json['EntityType'] as String? ?? 'Chemical',
     );
   }
