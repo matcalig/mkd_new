@@ -28,7 +28,7 @@ from the MKS Web Editions API (mkswebapi.com).
 - After any correction, update Lessons Learned below
 
 ## Known Working Features (don't break these)
-- Compound search with 2-char minimum and 300ms debounce
+- Compound search with 3-char minimum and 300ms debounce
 - Property selection with 5-property limit
 - Temperature (K) and Pressure (kPa) inputs with validation
 - Results table with loading/error/data states

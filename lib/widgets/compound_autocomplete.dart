@@ -6,7 +6,7 @@ import '../models/compound.dart';
 import '../services/mks_api_service.dart';
 
 /// An autocomplete text field that searches for chemical compounds via the
-/// MKS API with 300 ms debouncing and local caching.
+/// MKS API with a 3-character minimum, 300 ms debouncing, and local caching.
 ///
 /// The [label] is displayed inside the text field.
 /// When the user selects a compound, [onSelected] is called.
@@ -41,7 +41,7 @@ class _CompoundAutocompleteState extends State<CompoundAutocomplete> {
     TextEditingValue textEditingValue,
   ) async {
     final query = textEditingValue.text.trim();
-    if (query.length < 2) return const [];
+    if (query.length < 3) return const [];
 
     // Record the time of this call for debounce comparison.
     final callTime = DateTime.now();
@@ -77,7 +77,7 @@ class _CompoundAutocompleteState extends State<CompoundAutocomplete> {
           decoration: InputDecoration(
             labelText: widget.label,
             border: const OutlineInputBorder(),
-            hintText: 'Type at least 2 characters…',
+            hintText: 'Type at least 3 characters…',
           ),
           onSubmitted: (_) => onFieldSubmitted(),
         );
