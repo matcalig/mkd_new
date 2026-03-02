@@ -27,14 +27,7 @@ class CompoundAutocomplete extends StatefulWidget {
 }
 
 class _CompoundAutocompleteState extends State<CompoundAutocomplete> {
-  Timer? _debounce;
-  DateTime _lastCallTime = DateTime.fromMillisecondsSinceEpoch(0);
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
+  int _token = 0;
 
   /// Returns an async iterable of matching compounds, debounced by 300 ms.
   Future<Iterable<Compound>> _optionsBuilder(
@@ -43,19 +36,15 @@ class _CompoundAutocompleteState extends State<CompoundAutocomplete> {
     final query = textEditingValue.text.trim();
     if (query.length < 3) return const [];
 
-    // Record the time of this call for debounce comparison.
-    final callTime = DateTime.now();
-    _lastCallTime = callTime;
-
-    // Wait for the debounce window.
+    // Increment token; bail if a newer call arrives before delay expires.
+    final token = ++_token;
     await Future<void>.delayed(const Duration(milliseconds: 300));
-
-    // Bail out if a newer call has arrived.
-    if (callTime != _lastCallTime) return const [];
+    if (token != _token) return const [];
 
     try {
       return await widget.service.getEntities(query);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('CompoundAutocomplete error: $e');
       return const [];
     }
   }
