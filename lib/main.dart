@@ -11,6 +11,8 @@ void main() {
   runApp(const ThermoApp());
 }
 
+enum TempUnit { kelvin, celsius, fahrenheit }
+
 class ThermoApp extends StatelessWidget {
   const ThermoApp({super.key});
 
@@ -52,6 +54,7 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
   String? _propertiesError;
 
   // --- conditions ---
+  TempUnit _tempUnit = TempUnit.kelvin;
   final TextEditingController _tempController = TextEditingController(
     text: '293.15',
   );
@@ -103,7 +106,68 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
     }
   }
 
+  // --- unit conversion ---
+
+  double _toKelvin(double value, TempUnit unit) {
+    switch (unit) {
+      case TempUnit.celsius:
+        return value + 273.15;
+      case TempUnit.fahrenheit:
+        return (value - 32) * 5 / 9 + 273.15;
+      case TempUnit.kelvin:
+        return value;
+    }
+  }
+
+  double _fromKelvin(double kelvin, TempUnit unit) {
+    switch (unit) {
+      case TempUnit.celsius:
+        return kelvin - 273.15;
+      case TempUnit.fahrenheit:
+        return (kelvin - 273.15) * 9 / 5 + 32;
+      case TempUnit.kelvin:
+        return kelvin;
+    }
+  }
+
+  String _formatTemp(double value) {
+    return double.parse(value.toStringAsFixed(4)).toString();
+  }
+
+  void _onTempUnitChanged(TempUnit newUnit) {
+    final current = double.tryParse(_tempController.text.trim());
+    setState(() {
+      if (current != null) {
+        final kelvin = _toKelvin(current, _tempUnit);
+        _tempController.text = _formatTemp(_fromKelvin(kelvin, newUnit));
+      }
+      _tempUnit = newUnit;
+      _tempError = _validateTemp(_tempController.text);
+    });
+  }
+
+  String _tempUnitLabel(TempUnit unit) {
+    switch (unit) {
+      case TempUnit.kelvin:
+        return 'K';
+      case TempUnit.celsius:
+        return '°C';
+      case TempUnit.fahrenheit:
+        return '°F';
+    }
+  }
+
   // --- validation ---
+
+  String? _validateTemp(String value) {
+    if (value.trim().isEmpty) return 'Temperature is required.';
+    final parsed = double.tryParse(value.trim());
+    if (parsed == null) return 'Temperature must be a number.';
+    if (_toKelvin(parsed, _tempUnit) <= 0) {
+      return 'Temperature must be above absolute zero.';
+    }
+    return null;
+  }
 
   String? _validateDouble(String value, String fieldName) {
     if (value.trim().isEmpty) return '$fieldName is required.';
@@ -116,9 +180,7 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
   bool get _isFormValid {
     if (_compound1 == null) return false;
     if (_selectedProperties.isEmpty) return false;
-    if (_validateDouble(_tempController.text, 'Temperature') != null) {
-      return false;
-    }
+    if (_validateTemp(_tempController.text) != null) return false;
     if (_validateDouble(_pressureController.text, 'Pressure') != null) {
       return false;
     }
@@ -127,7 +189,7 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
 
   void _onTempChanged(String _) {
     setState(() {
-      _tempError = _validateDouble(_tempController.text, 'Temperature');
+      _tempError = _validateTemp(_tempController.text);
     });
   }
 
@@ -143,7 +205,7 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
   // --- calculate ---
 
   Future<void> _calculate() async {
-    final tempErr = _validateDouble(_tempController.text, 'Temperature');
+    final tempErr = _validateTemp(_tempController.text);
     final pressErr = _validateDouble(_pressureController.text, 'Pressure');
     setState(() {
       _tempError = tempErr;
@@ -152,7 +214,10 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
     if (tempErr != null || pressErr != null) return;
 
     final compounds = [_compound1!, if (_compound2 != null) _compound2!];
-    final temperature = double.parse(_tempController.text.trim());
+    final temperature = _toKelvin(
+      double.parse(_tempController.text.trim()),
+      _tempUnit,
+    );
     final pressure = double.parse(_pressureController.text.trim());
 
     setState(() {
@@ -250,17 +315,44 @@ class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _tempController,
-                        decoration: InputDecoration(
-                          labelText: 'Temperature (K)',
-                          border: const OutlineInputBorder(),
-                          errorText: _tempError,
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: _onTempChanged,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SegmentedButton<TempUnit>(
+                            segments: const [
+                              ButtonSegment(
+                                value: TempUnit.kelvin,
+                                label: Text('K'),
+                              ),
+                              ButtonSegment(
+                                value: TempUnit.celsius,
+                                label: Text('°C'),
+                              ),
+                              ButtonSegment(
+                                value: TempUnit.fahrenheit,
+                                label: Text('°F'),
+                              ),
+                            ],
+                            selected: {_tempUnit},
+                            onSelectionChanged: (s) =>
+                                _onTempUnitChanged(s.first),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _tempController,
+                            decoration: InputDecoration(
+                              labelText:
+                                  'Temperature (${_tempUnitLabel(_tempUnit)})',
+                              border: const OutlineInputBorder(),
+                              errorText: _tempError,
+                            ),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            onChanged: _onTempChanged,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 12),
