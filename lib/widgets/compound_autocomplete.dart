@@ -5,11 +5,10 @@ import 'package:flutter/material.dart';
 import '../models/compound.dart';
 import '../services/mks_api_service.dart';
 
-/// An autocomplete text field that searches for chemical compounds via the
-/// MKS API with a 3-character minimum, 300 ms debouncing, and local caching.
+/// A search field that queries chemical compounds via the MKS API.
 ///
-/// The [label] is displayed inside the text field.
-/// When the user selects a compound, [onSelected] is called.
+/// Triggers after 3 characters with a 300 ms debounce. Suggestions appear
+/// inline below the field. Selecting an item calls [onSelected].
 class CompoundAutocomplete extends StatefulWidget {
   const CompoundAutocomplete({
     super.key,
@@ -27,51 +26,122 @@ class CompoundAutocomplete extends StatefulWidget {
 }
 
 class _CompoundAutocompleteState extends State<CompoundAutocomplete> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+
+  Timer? _debounce;
   int _token = 0;
+  List<Compound> _options = [];
+  bool _showOptions = false;
 
-  /// Returns an async iterable of matching compounds, debounced by 300 ms.
-  Future<Iterable<Compound>> _optionsBuilder(
-    TextEditingValue textEditingValue,
-  ) async {
-    final query = textEditingValue.text.trim();
-    if (query.length < 3) return const [];
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChanged);
+  }
 
-    // Increment token; bail if a newer call arrives before delay expires.
-    final token = ++_token;
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (token != _token) return const [];
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _focusNode.removeListener(_onFocusChanged);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
 
-    try {
-      return await widget.service.getEntities(query);
-    } catch (e) {
-      debugPrint('CompoundAutocomplete error: $e');
-      return const [];
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus) {
+      // Small delay so a tap on an option fires before we hide the list.
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (mounted && !_focusNode.hasFocus) {
+          setState(() => _showOptions = false);
+        }
+      });
     }
+  }
+
+  void _onChanged(String text) {
+    _debounce?.cancel();
+    final query = text.trim();
+    if (query.length < 3) {
+      setState(() {
+        _options = [];
+        _showOptions = false;
+      });
+      return;
+    }
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _fetch(query),
+    );
+  }
+
+  Future<void> _fetch(String query) async {
+    final token = ++_token;
+    try {
+      final results = await widget.service.getEntities(query);
+      if (token != _token || !mounted) return;
+      setState(() {
+        _options = results.toList();
+        _showOptions = _options.isNotEmpty;
+      });
+    } catch (e) {
+      if (token != _token || !mounted) return;
+      debugPrint('CompoundAutocomplete error: $e');
+      setState(() {
+        _options = [];
+        _showOptions = false;
+      });
+    }
+  }
+
+  void _onSelect(Compound compound) {
+    _controller.text = compound.identifier;
+    setState(() {
+      _options = [];
+      _showOptions = false;
+    });
+    _focusNode.unfocus();
+    widget.onSelected(compound);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Autocomplete<Compound>(
-      displayStringForOption: (c) => c.identifier,
-      optionsBuilder: _optionsBuilder,
-      fieldViewBuilder: (
-        BuildContext context,
-        TextEditingController fieldController,
-        FocusNode fieldFocusNode,
-        VoidCallback onFieldSubmitted,
-      ) {
-        return TextField(
-          controller: fieldController,
-          focusNode: fieldFocusNode,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
           decoration: InputDecoration(
             labelText: widget.label,
             border: const OutlineInputBorder(),
             hintText: 'Type at least 3 characters…',
           ),
-          onSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      onSelected: widget.onSelected,
+          onChanged: _onChanged,
+        ),
+        if (_showOptions)
+          Material(
+            elevation: 4,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(4),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _options.length,
+                itemBuilder: (context, i) => ListTile(
+                  title: Text(_options[i].identifier),
+                  dense: true,
+                  onTap: () => _onSelect(_options[i]),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
