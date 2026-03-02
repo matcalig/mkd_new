@@ -28,14 +28,18 @@ class ThermoApp extends StatelessWidget {
 }
 
 class ThermoDataExplorer extends StatefulWidget {
-  const ThermoDataExplorer({super.key});
+  const ThermoDataExplorer({super.key, this.service});
+
+  /// Optional API service; defaults to a new [MksApiService] when omitted.
+  /// Supply a mock instance in tests to avoid real network calls.
+  final MksApiService? service;
 
   @override
   State<ThermoDataExplorer> createState() => _ThermoDataExplorerState();
 }
 
 class _ThermoDataExplorerState extends State<ThermoDataExplorer> {
-  final MksApiService _api = MksApiService();
+  late final MksApiService _api = widget.service ?? MksApiService();
 
   // --- compound selection ---
   Compound? _compound1;

@@ -11,9 +11,15 @@ import '../models/result_value.dart';
 /// API endpoint: https://mkswebapi.com/process?request=<url-encoded-json>
 /// All requests are HTTP GET with the JSON body URL-encoded in the `request=`
 /// query parameter.
+///
+/// An optional [client] may be supplied for testing (e.g. a mock HTTP client).
 class MksApiService {
+  MksApiService({http.Client? client}) : _client = client ?? http.Client();
+
   static const String _baseUrl = 'https://mkswebapi.com/process';
   static const Duration _timeout = Duration(seconds: 30);
+
+  final http.Client _client;
 
   // Cache for entity (compound) searches keyed by lowercase name pattern.
   final Map<String, List<Compound>> _entityCache = {};
@@ -27,7 +33,7 @@ class MksApiService {
     final uri = Uri.parse('$_baseUrl?request=$encoded');
 
     try {
-      final response = await http.get(uri).timeout(_timeout);
+      final response = await _client.get(uri).timeout(_timeout);
       if (response.statusCode != 200) {
         throw Exception(
           'API request failed (HTTP ${response.statusCode}). '
