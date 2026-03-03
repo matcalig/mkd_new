@@ -73,11 +73,15 @@ class MksApiService {
     });
 
     final raw = result['Entities'] as List<dynamic>? ?? const [];
+    final lowerPattern = pattern.toLowerCase();
     final entities =
         raw
             .whereType<Map<String, dynamic>>()
             .map(Compound.fromJson)
-            .where((c) => c.identifier.isNotEmpty)
+            .where((c) =>
+                c.identifier.isNotEmpty &&
+                c.identifier.toLowerCase().contains(lowerPattern))
+            .take(10)
             .toList();
 
     _entityCache[key] = entities;
